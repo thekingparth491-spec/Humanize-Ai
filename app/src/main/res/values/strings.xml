@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">HumanizeAI</string>
+    <string name="tagline">Understand, rewrite, and improve your text.</string>
+    <string name="ai_text_checker">AI Text Checker</string>
+    <string name="humanize_text">Humanize Text</string>
+    <string name="ai_style_converter">AI Style Converter</string>
+    <string name="text_improvement">Text Improvement</string>
+</resources>

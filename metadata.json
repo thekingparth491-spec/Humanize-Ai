@@ -1,0 +1,6 @@
+{
+  "name": "HumanizeAI",
+  "description": "AI Text Checker and Humanizer - analyze text authorship, humanize AI-generated content into natural prose, and convert writing styles.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
