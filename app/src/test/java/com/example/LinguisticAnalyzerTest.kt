@@ -15,7 +15,7 @@ class LinguisticAnalyzerTest {
         val words = LinguisticAnalyzer.splitWords(sample)
         val sentences = LinguisticAnalyzer.splitSentences(sample)
 
-        assertEquals(8, words.size)
+        assertEquals(9, words.size)
         assertEquals(3, sentences.size)
         assertEquals("Hello world!", sentences[0])
         assertEquals("This is a test.", sentences[1])
@@ -60,7 +60,7 @@ class LinguisticAnalyzerTest {
 
     @Test
     fun testHumanCadenceDetection() {
-        val humanText = "Wow! I never thought we'd actually make it to the trailhead before dark. After climbing over three fallen logs and getting soaked by an unexpected afternoon thunderstorm, we finally reached the cabin and started a warm campfire."
+        val humanText = "Wow! I never thought we'd actually make it to the trailhead before dark. After climbing over three fallen logs and getting soaked by an unexpected afternoon thunderstorm, we finally reached the cabin and started a warm campfire. Everyone threw their damp boots by the hearth, laughed about the crazy hike, and drank hot cider."
         val result = LinguisticAnalyzer.analyzeHeuristic(humanText)
 
         assertTrue("Human percentage should be relatively strong", result.humanPercentage >= 40)

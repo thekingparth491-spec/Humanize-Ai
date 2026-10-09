@@ -1,10 +1,17 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.auth.AuthRepository
 import com.example.data.database.AppDatabase
 import com.example.data.database.HistoryEntity
+import com.example.data.firestore.FirestoreChatMessage
+import com.example.data.firestore.FirestoreCollaborationDoc
+import com.example.data.firestore.FirestoreHistoryItem
+import com.example.data.firestore.FirestoreRepository
+import com.example.data.firestore.FirestoreUser
 import com.example.data.linguistics.LinguisticAnalyzer
 import com.example.data.model.AiStyleOptions
 import com.example.data.model.AiStyleResult
@@ -18,6 +25,7 @@ import com.example.data.model.TextAnalysisResult
 import com.example.data.repository.AiRepository
 import com.example.data.repository.AppSettings
 import com.example.data.repository.SettingsRepository
+import com.google.firebase.auth.FirebaseUser
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -33,7 +41,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val settingsRepository = SettingsRepository(application)
     val aiRepository = AiRepository(historyDao, settingsRepository)
 
+    val authRepository = AuthRepository()
+    val firestoreRepository = FirestoreRepository(application)
+
     val settings: StateFlow<AppSettings> = settingsRepository.settings
+
+    // Auth & Cloud User State
+    val currentUser: StateFlow<FirebaseUser?> = authRepository.authStateFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), authRepository.currentUser)
+
+    private val _firestoreUser = MutableStateFlow<FirestoreUser?>(null)
+    val firestoreUser: StateFlow<FirestoreUser?> = _firestoreUser.asStateFlow()
+
+    private val _authError = MutableStateFlow<String?>(null)
+    val authError: StateFlow<String?> = _authError.asStateFlow()
+
+    private val _isSigningIn = MutableStateFlow(false)
+    val isSigningIn: StateFlow<Boolean> = _isSigningIn.asStateFlow()
 
     // Checker State
     private val _checkerInput = MutableStateFlow("")
@@ -134,6 +158,209 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isCheckingConnection = MutableStateFlow(false)
     val isCheckingConnection: StateFlow<Boolean> = _isCheckingConnection.asStateFlow()
 
+    // Chatbot Support Agent State
+    private val _chatMessages = MutableStateFlow<List<FirestoreChatMessage>>(emptyList())
+    val chatMessages: StateFlow<List<FirestoreChatMessage>> = _chatMessages.asStateFlow()
+
+    private val _isChatResponding = MutableStateFlow(false)
+    val isChatResponding: StateFlow<Boolean> = _isChatResponding.asStateFlow()
+
+    // Real-Time Collaboration State
+    private val _currentCollabDoc = MutableStateFlow<FirestoreCollaborationDoc?>(null)
+    val currentCollabDoc: StateFlow<FirestoreCollaborationDoc?> = _currentCollabDoc.asStateFlow()
+
+    private val _collabStatus = MutableStateFlow<String?>(null)
+    val collabStatus: StateFlow<String?> = _collabStatus.asStateFlow()
+
+    init {
+        // Observe Auth Changes and bind Firestore profile
+        viewModelScope.launch {
+            currentUser.collect { user ->
+                if (user != null) {
+                    val profile = firestoreRepository.getOrCreateUser(
+                        userId = user.uid,
+                        email = user.email ?: "",
+                        displayName = user.displayName ?: "HumanizeAI User",
+                        photoUrl = user.photoUrl?.toString() ?: ""
+                    )
+                    _firestoreUser.value = profile
+
+                    // Listen to profile updates
+                    launch {
+                        firestoreRepository.observeUser(user.uid).collect { updated ->
+                            if (updated != null) _firestoreUser.value = updated
+                        }
+                    }
+
+                    // Listen to chat messages
+                    launch {
+                        firestoreRepository.observeChatMessages(user.uid).collect { messages ->
+                            _chatMessages.value = messages
+                        }
+                    }
+                } else {
+                    _firestoreUser.value = null
+                    _chatMessages.value = emptyList()
+                }
+            }
+        }
+    }
+
+    // --- AUTH ACTIONS ---
+    fun signInWithGoogle(context: Context) {
+        viewModelScope.launch {
+            _isSigningIn.value = true
+            _authError.value = null
+            val result = authRepository.signInWithGoogle(context)
+            _isSigningIn.value = false
+            result.fold(
+                onSuccess = { user ->
+                    _authError.value = null
+                },
+                onFailure = { error ->
+                    _authError.value = error.localizedMessage ?: "Sign-in failed."
+                }
+            )
+        }
+    }
+
+    fun signOut() {
+        authRepository.signOut()
+        _firestoreUser.value = null
+    }
+
+    // --- CUSTOM INSTRUCTIONS & PLAN ACTIONS ---
+    fun updateCustomInstructions(instructions: String) {
+        val user = currentUser.value ?: return
+        viewModelScope.launch {
+            firestoreRepository.updateCustomInstructions(user.uid, instructions)
+            _firestoreUser.value = _firestoreUser.value?.copy(customInstructions = instructions)
+        }
+    }
+
+    fun upgradePlan(plan: String) {
+        val user = currentUser.value ?: return
+        viewModelScope.launch {
+            val credits = if (plan == "annual") 2500L else 500L
+            firestoreRepository.updatePlan(user.uid, plan, credits)
+            _firestoreUser.value = _firestoreUser.value?.copy(plan = plan, credits = (_firestoreUser.value?.credits ?: 0L) + credits)
+        }
+    }
+
+    // --- CONTEXT-AWARE CHATBOT ACTIONS ---
+    fun sendChatMessage(userText: String) {
+        val trimmed = userText.trim()
+        if (trimmed.isBlank()) return
+
+        val user = currentUser.value
+        val userId = user?.uid ?: "local_user"
+        val customPrompt = _firestoreUser.value?.customInstructions ?: ""
+
+        val userMsg = FirestoreChatMessage(userId = userId, role = "user", content = trimmed)
+        val currentList = _chatMessages.value.toMutableList()
+        currentList.add(userMsg)
+        _chatMessages.value = currentList
+
+        viewModelScope.launch {
+            if (user != null) {
+                firestoreRepository.saveChatMessage(userId, "user", trimmed)
+            }
+
+            _isChatResponding.value = true
+
+            // Formulate conversation context for Gemini
+            val contextBuilder = StringBuilder()
+            contextBuilder.append("You are the intelligent support agent and expert writing advisor for HumanizeAI.\n")
+            contextBuilder.append("You remember previous messages in the conversation, help with multi-step requests/bookings, explain AI detection heuristics (burstiness, perplexity, TTR), and advise on custom style rules.\n")
+            if (customPrompt.isNotBlank()) {
+                contextBuilder.append("User's Custom App Instructions:\n\"\"\"$customPrompt\"\"\"\n")
+            }
+            contextBuilder.append("\nConversation History:\n")
+            _chatMessages.value.takeLast(6).forEach {
+                contextBuilder.append("${if (it.role == "user") "User" else "Agent"}: ${it.content}\n")
+            }
+            contextBuilder.append("User: $trimmed\nAgent:")
+
+            val aiResult = aiRepository.humanizeText(
+                text = trimmed,
+                options = HumanizeOptions(
+                    style = HumanizeStyle.CUSTOM,
+                    customInstructions = "Act as context-aware HumanizeAI support agent. Respond conversationally, concisely, and helpfully."
+                )
+            )
+
+            val replyText = aiResult.fold(
+                onSuccess = { it.humanizedText },
+                onFailure = { "I'm here to assist with your text analysis, rewriting styles, and account settings. How can I assist you with your draft today?" }
+            )
+
+            val agentMsg = FirestoreChatMessage(userId = userId, role = "assistant", content = replyText)
+            val updated = _chatMessages.value.toMutableList()
+            updated.add(agentMsg)
+            _chatMessages.value = updated
+
+            if (user != null) {
+                firestoreRepository.saveChatMessage(userId, "assistant", replyText)
+            }
+            _isChatResponding.value = false
+        }
+    }
+
+    // --- REAL-TIME COLLABORATION ACTIONS ---
+    fun createCollaborationSession(title: String, initialContent: String) {
+        val user = currentUser.value
+        val ownerId = user?.uid ?: "guest"
+        val ownerName = user?.displayName ?: "Collaborator"
+
+        viewModelScope.launch {
+            _collabStatus.value = "Creating collaborative session..."
+            try {
+                val docId = firestoreRepository.createCollaborationSession(title, initialContent, ownerId, ownerName)
+                joinCollaborationSession(docId)
+                _collabStatus.value = "Session created: $docId"
+            } catch (e: Exception) {
+                _collabStatus.value = "Error creating session: ${e.localizedMessage}"
+            }
+        }
+    }
+
+    fun joinCollaborationSession(docId: String) {
+        val user = currentUser.value
+        viewModelScope.launch {
+            _collabStatus.value = "Connecting to session..."
+            try {
+                if (user != null) {
+                    firestoreRepository.joinCollaborationSession(docId, user.uid)
+                }
+                firestoreRepository.observeCollaborationSession(docId).collect { doc ->
+                    _currentCollabDoc.value = doc
+                    if (doc != null) {
+                        _collabStatus.value = "Connected to ${doc.title}"
+                    }
+                }
+            } catch (e: Exception) {
+                _collabStatus.value = "Failed to connect: ${e.localizedMessage}"
+            }
+        }
+    }
+
+    fun updateCollaborationContent(docId: String, content: String) {
+        val editorName = currentUser.value?.displayName ?: "Collaborator"
+        viewModelScope.launch {
+            firestoreRepository.updateCollaborationContent(docId, content, editorName)
+        }
+    }
+
+    fun analyzeCollaborationContent(docId: String) {
+        val doc = _currentCollabDoc.value ?: return
+        viewModelScope.launch {
+            val result = aiRepository.analyzeText(doc.content)
+            result.onSuccess {
+                firestoreRepository.updateCollaborationScores(docId, it.aiPercentage.toLong(), it.humanPercentage.toLong())
+            }
+        }
+    }
+
     // --- CHECKER ACTIONS ---
     fun setCheckerInput(text: String) {
         _checkerInput.value = text
@@ -159,7 +386,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val result = aiRepository.analyzeText(text)
             _isAnalyzing.value = false
             result.fold(
-                onSuccess = { _analysisResult.value = it },
+                onSuccess = { res ->
+                    _analysisResult.value = res
+                    currentUser.value?.let { user ->
+                        firestoreRepository.saveCloudHistory(
+                            userId = user.uid,
+                            item = FirestoreHistoryItem(
+                                userId = user.uid,
+                                toolType = "CHECKER",
+                                title = "AI Analysis: ${res.aiPercentage}% AI",
+                                inputText = text,
+                                outputText = res.overallAssessment,
+                                aiScore = res.aiPercentage.toLong(),
+                                humanScore = res.humanPercentage.toLong(),
+                                wordCount = res.statistics.wordCount.toLong()
+                            )
+                        )
+                    }
+                },
                 onFailure = { _checkerError.value = it.localizedMessage ?: "Analysis failed." }
             )
         }
@@ -203,10 +447,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isHumanizing.value = true
             _humanizeError.value = null
-            val result = aiRepository.humanizeText(text, _humanizeOptions.value)
+
+            // Merge user custom instructions if present
+            val userCustom = _firestoreUser.value?.customInstructions ?: ""
+            val effectiveOptions = if (userCustom.isNotBlank() && _humanizeOptions.value.customInstructions.isBlank()) {
+                _humanizeOptions.value.copy(customInstructions = userCustom)
+            } else {
+                _humanizeOptions.value
+            }
+
+            val result = aiRepository.humanizeText(text, effectiveOptions)
             _isHumanizing.value = false
             result.fold(
-                onSuccess = { _humanizeResult.value = it },
+                onSuccess = { res ->
+                    _humanizeResult.value = res
+                    currentUser.value?.let { user ->
+                        firestoreRepository.saveCloudHistory(
+                            userId = user.uid,
+                            item = FirestoreHistoryItem(
+                                userId = user.uid,
+                                toolType = "HUMANIZE",
+                                title = "Humanized (${effectiveOptions.style.displayName})",
+                                inputText = text,
+                                outputText = res.humanizedText,
+                                styleSelected = effectiveOptions.style.displayName,
+                                wordCount = res.wordCountAfter.toLong()
+                            )
+                        )
+                    }
+                },
                 onFailure = { _humanizeError.value = it.localizedMessage ?: "Humanization failed." }
             )
         }
@@ -256,7 +525,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val result = aiRepository.convertAiStyle(text, _aiStyleOptions.value)
             _isConvertingAiStyle.value = false
             result.fold(
-                onSuccess = { _aiStyleResult.value = it },
+                onSuccess = { res ->
+                    _aiStyleResult.value = res
+                    currentUser.value?.let { user ->
+                        firestoreRepository.saveCloudHistory(
+                            userId = user.uid,
+                            item = FirestoreHistoryItem(
+                                userId = user.uid,
+                                toolType = "AI_STYLE",
+                                title = "AI Style (${_aiStyleOptions.value.style.displayName})",
+                                inputText = text,
+                                outputText = res.aiStyledText,
+                                styleSelected = _aiStyleOptions.value.style.displayName,
+                                wordCount = res.wordCountAfter.toLong()
+                            )
+                        )
+                    }
+                },
                 onFailure = { _aiStyleError.value = it.localizedMessage ?: "Style conversion failed." }
             )
         }
@@ -293,7 +578,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
             _isImproving.value = false
             result.fold(
-                onSuccess = { _improveResult.value = it },
+                onSuccess = { res ->
+                    _improveResult.value = res
+                    currentUser.value?.let { user ->
+                        firestoreRepository.saveCloudHistory(
+                            userId = user.uid,
+                            item = FirestoreHistoryItem(
+                                userId = user.uid,
+                                toolType = "IMPROVE",
+                                title = "Improved (${_selectedImproveTool.value.displayName})",
+                                inputText = text,
+                                outputText = res.improvedText,
+                                styleSelected = _selectedImproveTool.value.displayName,
+                                wordCount = LinguisticAnalyzer.splitWords(res.improvedText).size.toLong()
+                            )
+                        )
+                    }
+                },
                 onFailure = { _improveError.value = it.localizedMessage ?: "Improvement failed." }
             )
         }
@@ -322,18 +623,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun reopenHistoryItem(item: HistoryEntity) {
         when (item.toolType) {
-            "CHECKER" -> {
-                _checkerInput.value = item.inputText
-            }
-            "HUMANIZE" -> {
-                _humanizeInput.value = item.inputText
-            }
-            "AI_STYLE" -> {
-                _aiStyleInput.value = item.inputText
-            }
-            "IMPROVE" -> {
-                _improveInput.value = item.inputText
-            }
+            "CHECKER" -> _checkerInput.value = item.inputText
+            "HUMANIZE" -> _humanizeInput.value = item.inputText
+            "AI_STYLE" -> _aiStyleInput.value = item.inputText
+            "IMPROVE" -> _improveInput.value = item.inputText
         }
     }
 

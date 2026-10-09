@@ -1,0 +1,95 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile, subscription plan, and cloud preferences",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Unique user ID matching auth.uid" },
+        "displayName": { "type": "string", "description": "Display name of the user" },
+        "email": { "type": "string", "description": "Email address" },
+        "photoUrl": { "type": "string", "description": "Profile picture URL" },
+        "customInstructions": { "type": "string", "description": "Custom prompt instructions for Gemini transformations" },
+        "plan": { "type": "string", "enum": ["free", "monthly", "annual"], "description": "Subscription tier: free, monthly ($20/mo), or annual ($240/yr)" },
+        "credits": { "type": "integer", "description": "Available usage credits" },
+        "theme": { "type": "string", "description": "Preferred UI theme" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Account creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp" }
+      },
+      "required": ["userId", "email", "plan", "credits"]
+    },
+    "HistoryItem": {
+      "title": "HistoryItem",
+      "description": "Analysis or humanized text history record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique history item ID" },
+        "userId": { "type": "string", "description": "Owner user ID matching auth.uid" },
+        "toolType": { "type": "string", "description": "CHECKER, HUMANIZE, AI_STYLE, or IMPROVE" },
+        "title": { "type": "string", "description": "Short title or summary" },
+        "inputText": { "type": "string", "description": "Original input text" },
+        "outputText": { "type": "string", "description": "Processed output text" },
+        "styleSelected": { "type": "string", "description": "Style chosen during processing" },
+        "aiScore": { "type": "integer", "description": "AI likelihood percentage" },
+        "humanScore": { "type": "integer", "description": "Human likelihood percentage" },
+        "wordCount": { "type": "integer", "description": "Word count of the text" },
+        "timestamp": { "type": "string", "format": "date-time", "description": "Creation timestamp" }
+      },
+      "required": ["id", "userId", "toolType", "inputText", "outputText"]
+    },
+    "CollaborationDocument": {
+      "title": "CollaborationDocument",
+      "description": "Shared document for real-time collaborative text editing and analysis",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Document ID" },
+        "title": { "type": "string", "description": "Title of the collaborative session" },
+        "content": { "type": "string", "description": "Collaborative text content" },
+        "ownerId": { "type": "string", "description": "User ID of document owner" },
+        "ownerName": { "type": "string", "description": "Name of document creator" },
+        "participantIds": {
+          "type": "array",
+          "description": "List of user IDs participating in the collaboration"
+        },
+        "lastEditedBy": { "type": "string", "description": "User ID of last editor" },
+        "activeTool": { "type": "string", "description": "Current active tool" },
+        "aiScore": { "type": "integer", "description": "Current AI score of content" },
+        "humanScore": { "type": "integer", "description": "Current human score of content" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last modified timestamp" }
+      },
+      "required": ["id", "title", "content", "ownerId"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Conversation message with the context-aware support agent",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Message ID" },
+        "userId": { "type": "string", "description": "User ID matching auth.uid" },
+        "role": { "type": "string", "enum": ["user", "assistant"], "description": "Sender role" },
+        "content": { "type": "string", "description": "Message text" },
+        "timestamp": { "type": "string", "format": "date-time", "description": "Message timestamp" }
+      },
+      "required": ["id", "userId", "role", "content"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profile and sync preferences"
+    },
+    "/users/{userId}/history/{historyId}": {
+      "schema": { "$ref": "#/entities/HistoryItem" },
+      "description": "Per-user persistent history records"
+    },
+    "/users/{userId}/chat_messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Context-aware chatbot memory logs"
+    },
+    "/collaborations/{docId}": {
+      "schema": { "$ref": "#/entities/CollaborationDocument" },
+      "description": "Real-time shared collaboration sessions"
+    }
+  }
+}

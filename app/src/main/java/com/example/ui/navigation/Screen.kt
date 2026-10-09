@@ -12,4 +12,8 @@ sealed class Screen(val route: String) {
     data object Improver : Screen("improver")
     data object History : Screen("history")
     data object Settings : Screen("settings")
+    data object Auth : Screen("auth")
+    data object Chatbot : Screen("chatbot")
+    data object Collaboration : Screen("collaboration")
+    data object Subscription : Screen("subscription")
 }

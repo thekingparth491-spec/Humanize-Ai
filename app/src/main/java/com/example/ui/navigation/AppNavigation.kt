@@ -7,8 +7,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.ui.aistyle.AiStyleScreen
+import com.example.ui.auth.AuthScreen
+import com.example.ui.chat.ChatbotScreen
 import com.example.ui.checker.AiCheckerResultScreen
 import com.example.ui.checker.AiCheckerScreen
+import com.example.ui.collab.CollaborationScreen
 import com.example.ui.history.HistoryScreen
 import com.example.ui.home.HomeScreen
 import com.example.ui.humanizer.HumanizerResultScreen
@@ -17,6 +20,7 @@ import com.example.ui.improver.TextImproveScreen
 import com.example.ui.onboarding.OnboardingScreen
 import com.example.ui.settings.SettingsScreen
 import com.example.ui.splash.SplashScreen
+import com.example.ui.subscription.SubscriptionScreen
 import com.example.ui.viewmodel.MainViewModel
 
 @Composable
@@ -58,7 +62,11 @@ fun AppNavigation(
                 onNavigateToAiStyle = { navController.navigate(Screen.AiStyle.route) },
                 onNavigateToImprover = { navController.navigate(Screen.Improver.route) },
                 onNavigateToHistory = { navController.navigate(Screen.History.route) },
-                onNavigateToSettings = { navController.navigate(Screen.Settings.route) }
+                onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
+                onNavigateToAuth = { navController.navigate(Screen.Auth.route) },
+                onNavigateToChat = { navController.navigate(Screen.Chatbot.route) },
+                onNavigateToCollab = { navController.navigate(Screen.Collaboration.route) },
+                onNavigateToSubscription = { navController.navigate(Screen.Subscription.route) }
             )
         }
 
@@ -119,6 +127,37 @@ fun AppNavigation(
 
         composable(Screen.Settings.route) {
             SettingsScreen(
+                viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToAuth = { navController.navigate(Screen.Auth.route) },
+                onNavigateToSubscription = { navController.navigate(Screen.Subscription.route) }
+            )
+        }
+
+        composable(Screen.Auth.route) {
+            AuthScreen(
+                viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToSubscription = { navController.navigate(Screen.Subscription.route) }
+            )
+        }
+
+        composable(Screen.Chatbot.route) {
+            ChatbotScreen(
+                viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.Collaboration.route) {
+            CollaborationScreen(
+                viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.Subscription.route) {
+            SubscriptionScreen(
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() }
             )

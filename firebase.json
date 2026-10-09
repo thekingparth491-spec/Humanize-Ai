@@ -1,0 +1,8 @@
+{
+  "firestore": [
+    {
+      "database": "ai-studio-android-humanize-83ad54a4-3cdf-4fac-847f-362dd8b60529",
+      "rules": "firestore.rules"
+    }
+  ]
+}

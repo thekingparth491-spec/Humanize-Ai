@@ -20,20 +20,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -67,7 +71,6 @@ import com.example.R
 import com.example.data.database.HistoryEntity
 import com.example.ui.components.GlassCard
 import com.example.ui.theme.AiScoreOrange
-import com.example.ui.theme.AiScoreRed
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.HumanScoreEmerald
 import com.example.ui.theme.NavyBackground
@@ -87,10 +90,16 @@ fun HomeScreen(
     onNavigateToAiStyle: () -> Unit,
     onNavigateToImprover: () -> Unit,
     onNavigateToHistory: () -> Unit,
-    onNavigateToSettings: () -> Unit
+    onNavigateToSettings: () -> Unit,
+    onNavigateToAuth: () -> Unit,
+    onNavigateToChat: () -> Unit,
+    onNavigateToCollab: () -> Unit,
+    onNavigateToSubscription: () -> Unit
 ) {
     val context = LocalContext.current
     val recentHistory by viewModel.recentHistory.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
+    val firestoreUser by viewModel.firestoreUser.collectAsState()
     var quickInputText by remember { mutableStateOf("") }
     val quickWords = viewModel.getWordCount(quickInputText)
 
@@ -100,7 +109,7 @@ fun HomeScreen(
             .background(NavyBackground)
             .padding(horizontal = 20.dp)
             .testTag("home_screen"),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         // Top Header
         item {
@@ -134,7 +143,7 @@ fun HomeScreen(
                     }
                 }
 
-                Row {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
                         onClick = onNavigateToHistory,
                         modifier = Modifier.testTag("home_history_button")
@@ -155,6 +164,67 @@ fun HomeScreen(
                             tint = Color.White
                         )
                     }
+                    // User Avatar / Auth button
+                    IconButton(
+                        onClick = onNavigateToAuth,
+                        modifier = Modifier.testTag("home_auth_button")
+                    ) {
+                        if (currentUser != null) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(VioletPrimary),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = (currentUser?.displayName?.take(1) ?: "U").uppercase(),
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.AccountCircle,
+                                contentDescription = "Account",
+                                tint = CyanAccent
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Feature Banner Chips (Chat, Collab, Pro)
+        item {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                item {
+                    BannerChip(
+                        icon = Icons.Default.SupportAgent,
+                        title = "AI Support Agent",
+                        subtitle = "Context-aware help",
+                        color = VioletPrimary,
+                        onClick = onNavigateToChat
+                    )
+                }
+                item {
+                    BannerChip(
+                        icon = Icons.Default.Group,
+                        title = "Live Collab Room",
+                        subtitle = "Real-time team editing",
+                        color = CyanAccent,
+                        onClick = onNavigateToCollab
+                    )
+                }
+                item {
+                    BannerChip(
+                        icon = Icons.Default.WorkspacePremium,
+                        title = "Pro Plan",
+                        subtitle = "$20/mo or $240/yr",
+                        color = HumanScoreEmerald,
+                        onClick = onNavigateToSubscription
+                    )
                 }
             }
         }
@@ -424,6 +494,43 @@ fun HomeScreen(
 
         item {
             Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun BannerChip(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    color: Color,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .border(1.dp, color.copy(alpha = 0.3f), RoundedCornerShape(14.dp)),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(color.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(imageVector = icon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
+            }
+            Spacer(modifier = Modifier.width(10.dp))
+            Column {
+                Text(title, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
+                Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+            }
         }
     }
 }
